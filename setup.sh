@@ -38,9 +38,10 @@ echo ""
 read -rp "Camera name (lowercase, no spaces, e.g. 'nursery'): " CAMERA_NAME
 read -rp "Nanit baby UID (from session.json, e.g. 'a1b2c3d4'): " BABY_UID
 read -rp "Nanit camera UID / serial (e.g. 'N301XMN12345AB'): " CAMERA_UID
-read -rp "This container's primary IP (e.g. '192.168.1.10'): " CONTAINER_IP
+read -rp "This container's static IP (e.g. '192.168.1.10'): " CONTAINER_IP
 read -rp "Secondary IP for ONVIF virtual camera (e.g. '192.168.1.151'): " ONVIF_IP
-read -rp "Subnet prefix length (e.g. '23'): " SUBNET_PREFIX
+read -rp "Gateway IP (e.g. '192.168.1.1'): " GATEWAY_IP
+read -rp "Subnet prefix length (e.g. '24'): " SUBNET_PREFIX
 read -rp "ONVIF username [admin]: " ONVIF_USER
 ONVIF_USER=${ONVIF_USER:-admin}
 read -rsp "ONVIF password: " ONVIF_PASS
@@ -172,7 +173,9 @@ auto lo
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet dhcp
+iface eth0 inet static
+    address ${CONTAINER_IP}/${SUBNET_PREFIX}
+    gateway ${GATEWAY_IP}
 
 auto eth0:1
 iface eth0:1 inet static

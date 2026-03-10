@@ -1,11 +1,16 @@
 auto lo
 iface lo inet loopback
 
+# Primary IP — must be static so RTSP URLs, ONVIF configs, and
+# NANIT_RTMP_ADDR all remain valid across reboots.
 auto eth0
-iface eth0 inet dhcp
+iface eth0 inet static
+    address <CONTAINER_IP>/<PREFIX>
+    gateway <GATEWAY_IP>
 
-# Secondary IP for ONVIF virtual camera
-# Each camera needs its own unique IP on the network
+# Secondary IP for ONVIF virtual camera.
+# UniFi Protect requires ONVIF on port 80; iptables NAT redirects
+# port 80 on this IP to the ONVIF server on port 8081.
 auto eth0:1
 iface eth0:1 inet static
-    address <ONVIF_VIRTUAL_IP>/23
+    address <ONVIF_VIRTUAL_IP>/<PREFIX>

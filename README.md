@@ -62,7 +62,7 @@ Create a Debian 13 container with these specs (adjust as needed):
 | Cores | 1 |
 | RAM | 1024 MB |
 | Disk | 16 GB |
-| Network | DHCP on vmbr0 |
+| Network | Static IP on vmbr0 (see below) |
 | Unprivileged | Yes |
 | Nesting | Yes (features: nesting=1) |
 | Start on boot | Yes |
@@ -169,12 +169,16 @@ auto lo
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet dhcp
+iface eth0 inet static
+    address <CONTAINER_IP>/<PREFIX>
+    gateway <GATEWAY_IP>
 
 auto eth0:1
 iface eth0:1 inet static
     address <ONVIF_VIRTUAL_IP>/<PREFIX>
 ```
+
+> **Important:** Use static IPs, not DHCP. Multiple config files reference the container's primary IP (`NANIT_RTMP_ADDR`, ONVIF `rtsp_url`/`snapshot_url`). If the IP changes, streams will break.
 
 Create `/etc/rc.local`:
 
@@ -266,14 +270,14 @@ Without these, both default to `0.0.0` and `1.0.0` respectively, causing Protect
 
 ### Network Architecture
 
-Each camera container uses two IPs:
+Each camera container uses two static IPs:
 
 | IP | Purpose |
 |---|---|
-| Primary (DHCP) | Container's main IP — runs nanit, go2rtc, ONVIF server |
+| Primary (static) | Container's main IP — runs nanit, go2rtc, ONVIF server |
 | Secondary (static) | Virtual IP for ONVIF — iptables NATs port 80 to 8081 |
 
-The secondary IP is what you give to UniFi Protect when adding the camera.
+Both IPs **must be static**. The primary IP is referenced in `docker-compose.yml` (`NANIT_RTMP_ADDR`), `onvif.yaml` (`rtsp_url`, `snapshot_url`), and UFW rules. If it changes, streams will break. The secondary IP is what you give to UniFi Protect when adding the camera.
 
 ### Why host networking?
 
