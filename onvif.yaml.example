@@ -1,0 +1,23 @@
+server:
+  username: admin
+  password: CHANGE_ME
+  http_port: 8081
+  Manufacturer: Nanit
+  Model: ProCamera
+  # IMPORTANT: Each ONVIF instance MUST have a unique SerialNumber.
+  # UniFi Protect uses this to identify cameras. If two instances share
+  # the same serial, Protect will treat them as the same camera.
+  # Recommended: use the Nanit camera UID as the serial number.
+  SerialNumber: UNIQUE_SERIAL_HERE
+  HardwareID: UNIQUE_HWID_HERE
+  FirmwareVersion: 1.0.0
+  devices:
+    - name: Camera Name
+      token: camera-name
+      # Must match the stream name in go2rtc.yaml
+      rtsp_url: rtsp://<container-ip>:8554/<stream-name>
+      snapshot_url: http://<container-ip>:1984/api/frame.jpeg?src=<stream-name>
+      width: 1920
+      height: 1080
+      framerate: 10
+      bitrate: 2048

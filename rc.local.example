@@ -1,0 +1,13 @@
+#!/bin/sh
+# Add secondary IP for ONVIF virtual camera
+# UniFi Protect requires ONVIF on port 80, but we run the server on 8081.
+# A secondary IP with iptables NAT redirects port 80 -> 8081.
+ip addr add <ONVIF_VIRTUAL_IP>/23 dev eth0 2>/dev/null
+
+# NAT port 80 on virtual IP to ONVIF server port
+# PREROUTING handles incoming traffic from the network
+iptables -t nat -A PREROUTING -d <ONVIF_VIRTUAL_IP> -p tcp --dport 80 -j REDIRECT --to-port 8081
+# OUTPUT handles locally-generated traffic (for testing with curl)
+iptables -t nat -A OUTPUT -d <ONVIF_VIRTUAL_IP> -p tcp --dport 80 -j REDIRECT --to-port 8081
+
+exit 0

@@ -1,0 +1,18 @@
+# Nanit session data (contains auth tokens)
+data/
+session.json
+
+# Actual config files (may contain passwords/IPs)
+go2rtc.yaml
+onvif.yaml
+onvif-*.yaml
+
+# SSH keys
+*.pem
+*.key
+id_*
+authorized_keys
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# Secondary IP for ONVIF virtual camera
+# Each camera needs its own unique IP on the network
+auto eth0:1
+iface eth0:1 inet static
+    address <ONVIF_VIRTUAL_IP>/23

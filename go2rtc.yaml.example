@@ -1,0 +1,10 @@
+streams:
+  # Stream name used in RTSP URL: rtsp://<container-ip>:8554/<stream-name>
+  camera-name:
+    - rtmp://127.0.0.1:1935/local/<baby-uid>
+
+rtsp:
+  listen: ":8554"
+
+api:
+  listen: ":1984"
