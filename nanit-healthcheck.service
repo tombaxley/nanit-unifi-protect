@@ -1,0 +1,7 @@
+[Unit]
+Description=Nanit RTMP stream health check
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nanit/nanit-healthcheck.sh

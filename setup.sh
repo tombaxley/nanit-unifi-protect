@@ -276,6 +276,27 @@ fi
 echo "y" | ufw enable > /dev/null 2>&1
 info "Firewall configured."
 
+# --- Health check (primary only) ----------------------------------------------
+
+if [[ "${IS_PRIMARY}" == "y" ]]; then
+    info "Installing RTMP stream health check..."
+
+    # Install jq (required by health check script)
+    apt-get install -y -qq jq > /dev/null 2>&1
+
+    # Copy health check script
+    cp /tmp/nanit-setup/nanit-healthcheck.sh /opt/nanit/nanit-healthcheck.sh
+    chmod +x /opt/nanit/nanit-healthcheck.sh
+
+    # Install systemd service and timer
+    cp /tmp/nanit-setup/nanit-healthcheck.service /etc/systemd/system/
+    cp /tmp/nanit-setup/nanit-healthcheck.timer /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable --now nanit-healthcheck.timer
+
+    info "Health check installed (runs every 3 minutes, restarts nanit after 2 consecutive failures)."
+fi
+
 # --- Nanit session data -------------------------------------------------------
 
 if [[ "${IS_PRIMARY}" == "y" ]] && [[ ! -f /opt/nanit/data/session.json ]]; then

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Nanit health check every 3 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=180
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -343,6 +343,51 @@ The RTSP streams from go2rtc can be added directly to Home Assistant using the *
 
 Remember to add your Home Assistant's IP to UFW on each container (ports 8554 and 1984).
 
+## Health Check (Primary Only)
+
+The primary container includes an automated health check that monitors the RTMP stream and restarts the nanit container if it gets stuck in a connection failure loop.
+
+### How It Works
+
+A systemd timer runs `/opt/nanit/nanit-healthcheck.sh` every 3 minutes. The script queries the go2rtc API to check for active RTMP producers (cameras pushing streams). If no producers are active for **2 consecutive checks** (6 minutes), it automatically restarts the nanit container.
+
+This handles the common failure mode where nanit enters a "too many app connections" retry loop that never recovers without a manual restart.
+
+### Installation
+
+The setup script installs the health check automatically on primary containers. To install manually:
+
+```bash
+cp nanit-healthcheck.sh /opt/nanit/nanit-healthcheck.sh
+chmod +x /opt/nanit/nanit-healthcheck.sh
+cp nanit-healthcheck.service /etc/systemd/system/
+cp nanit-healthcheck.timer /etc/systemd/system/
+apt-get install -y jq
+systemctl daemon-reload
+systemctl enable --now nanit-healthcheck.timer
+```
+
+### Monitoring
+
+Check health check logs:
+
+```bash
+cat /var/log/nanit-healthcheck.log
+```
+
+Verify the timer is running:
+
+```bash
+systemctl status nanit-healthcheck.timer
+```
+
+### Configuration
+
+Edit `/opt/nanit/nanit-healthcheck.sh` to adjust:
+
+- `MAX_FAILURES` — consecutive failures before restart (default: 2)
+- Timer interval — edit `/etc/systemd/system/nanit-healthcheck.timer` `OnUnitActiveSec` (default: 180 seconds)
+
 ## Troubleshooting
 
 ### Camera not appearing in Protect
