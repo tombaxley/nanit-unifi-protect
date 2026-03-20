@@ -4,43 +4,47 @@ Bridge Nanit baby cameras into Ubiquiti's UniFi Protect ecosystem via ONVIF, ena
 
 ## Architecture
 
+The `indiefan/nanit` container connects to the Nanit cloud and receives RTMP streams for **all cameras on your account**. It runs on a single "primary" container. Additional cameras each get their own container running only go2rtc and onvif-server, pulling RTMP from the primary over the network.
+
 ```
-Nanit Cloud
-    |
-    | WebSocket (camera control)
-    v
-+-----------------------+
-| indiefan/nanit        | Connects to Nanit API, requests cameras
-| (RTMP server :1935)   | stream RTMP to this container
-+-----------------------+
-    |
-    | RTMP (rtmp://127.0.0.1:1935/local/<baby_uid>)
-    v
-+-----------------------+
-| alexxit/go2rtc        | Converts RTMP to RTSP on-demand
-| (RTSP :8554, API:1984)|
-+-----------------------+
-    |
-    | RTSP (rtsp://<container-ip>:8554/<stream-name>)
-    v
-+-----------------------+
-| danimal4326/          | Wraps RTSP as an ONVIF device with
-| onvif-server (:8081)  | WS-Security auth
-+-----------------------+
-    |
-    | ONVIF (http://<virtual-ip>:80 → NAT → :8081)
-    v
-+-----------------------+
-| UniFi Protect (UNVR)  | Discovers and streams from ONVIF device
-+-----------------------+
-    |
-    v
-ViewPort / Mobile App / Web UI
+                            Nanit Cloud
+                                |
+                                | WebSocket (camera control)
+                                v
+PRIMARY CONTAINER          +------------------+
+                           | indiefan/nanit   | Receives RTMP for ALL cameras
+                           | (RTMP :1935)     |
+                           +------------------+
+                            /             \
+          RTMP (localhost) /               \ RTMP (over network)
+                         v                 v
+                   +-----------+     +-----------+
+                   | go2rtc    |     | go2rtc    |   SECONDARY CONTAINER(S)
+                   | (:8554)   |     | (:8554)   |
+                   +-----------+     +-----------+
+                         |                 |
+                         v                 v
+                   +-----------+     +-----------+
+                   | onvif-    |     | onvif-    |
+                   | server    |     | server    |
+                   | (:8081)   |     | (:8081)   |
+                   +-----------+     +-----------+
+                         \                /
+                   ONVIF  \              / ONVIF
+                           v            v
+                      +------------------+
+                      | UniFi Protect    |
+                      | (UNVR)           |
+                      +------------------+
+                              |
+                              v
+                  ViewPort / Mobile / Web UI
 ```
 
-## Why One Container Per Camera?
+### Why This Architecture?
 
-UniFi Protect has issues when multiple ONVIF cameras are served from the same host. While you might expect to run all cameras in a single container, Protect tends to conflate them. The reliable approach is **one dedicated LXC container per Nanit camera**, each with its own IP addresses and ONVIF instance.
+- **One nanit instance only.** The Nanit cloud limits concurrent "app" connections per camera. Running multiple nanit containers causes `"Too many app connections"` errors that break streams. A single nanit instance stays within limits.
+- **One ONVIF container per camera.** UniFi Protect has issues when multiple ONVIF cameras are served from the same host — it tends to conflate them. Each camera gets its own LXC container with its own IPs and ONVIF instance.
 
 ## Prerequisites
 
@@ -78,9 +82,12 @@ chmod +x /tmp/nanit-setup/setup.sh
 /tmp/nanit-setup/setup.sh
 ```
 
-The script will prompt for all configuration values and set up everything automatically.
+The script will prompt for all configuration values and set up everything automatically. It will ask whether this is the **primary** container (runs nanit + go2rtc + ONVIF) or a **secondary** container (runs go2rtc + ONVIF only, pulls RTMP from the primary over the network).
 
-### 3. Provide Nanit Session Data
+- Your **first container** should be set up as **primary**.
+- All **additional camera containers** should be set up as **secondary**, pointing to the primary container's IP for their RTMP source.
+
+### 3. Provide Nanit Session Data (Primary Only)
 
 The `indiefan/nanit` container needs a `session.json` file to authenticate with Nanit's cloud API. There are two ways to get this:
 
@@ -108,7 +115,7 @@ docker logs nanit
 
 Follow the login flow and the session will be saved to `/opt/nanit/data/session.json` automatically.
 
-> **Note:** The nanit container connects to **all cameras on your Nanit account** regardless of which container it runs on. This is expected behavior. The go2rtc config filters to only the specific camera's RTMP stream.
+> **Note:** The nanit container connects to **all cameras on your Nanit account**. This is expected — go2rtc on each container filters to only the specific camera's stream via the baby UID in the RTMP path.
 
 ### 4. Add Camera in UniFi Protect
 
@@ -124,7 +131,7 @@ The camera should appear and start streaming within a few seconds.
 
 ### 5. Repeat for Each Camera
 
-Create a new LXC container for each additional camera and run the setup script again with that camera's details.
+Create a new LXC container for each additional camera and run the setup script again, selecting **secondary** mode and providing the primary container's IP.
 
 ## Manual Setup
 
@@ -151,8 +158,14 @@ Copy the example files and edit them:
 
 ```bash
 mkdir -p /opt/nanit/data
-cp docker-compose.yml /opt/nanit/
-cp go2rtc.yaml.example /opt/nanit/go2rtc.yaml
+cp docker-compose.yml /opt/nanit/          # Primary container (with nanit)
+# OR
+cp docker-compose.secondary.yml /opt/nanit/docker-compose.yml  # Secondary (no nanit)
+
+cp go2rtc.yaml.example /opt/nanit/go2rtc.yaml            # Primary (localhost RTMP)
+# OR
+cp go2rtc.yaml.secondary.example /opt/nanit/go2rtc.yaml   # Secondary (network RTMP)
+
 cp onvif.yaml.example /opt/nanit/onvif.yaml
 ```
 
@@ -210,8 +223,8 @@ ufw default allow outgoing
 # SSH from LAN
 ufw allow from <LAN_SUBNET> to any port 22 proto tcp
 
-# Nanit camera RTMP inbound
-ufw allow from <CAMERA_IP> to any port 1935 proto tcp
+# Nanit camera RTMP inbound (use your LAN subnet so camera IP changes don't break things)
+ufw allow from <LAN_SUBNET> to any port 1935 proto tcp
 
 # UNVR access to streams
 ufw allow from <UNVR_IP> to any port 8554 proto tcp   # RTSP
@@ -223,8 +236,14 @@ ufw allow from <UNVR_IP> to any port 80 proto tcp     # ONVIF port 80
 ufw allow from <VIEWPORT_IP> to any port 8554 proto tcp
 ufw allow from <VIEWPORT_IP> to any port 1984 proto tcp
 
+# Home Assistant (optional)
+ufw allow from <HA_IP> to any port 8554 proto tcp
+ufw allow from <HA_IP> to any port 1984 proto tcp
+
 ufw enable
 ```
+
+> **Tip:** Use your LAN subnet (e.g., `192.168.1.0/24`) instead of individual camera IPs for the RTMP rule. Nanit cameras get their IPs via DHCP, and if the IP changes, a per-IP rule will silently break the stream.
 
 ### Start the Stack
 
@@ -254,6 +273,18 @@ The `session.json` file (in `/opt/nanit/data/`) contains your camera information
 
 ## Key Configuration Details
 
+### Primary vs. Secondary Containers
+
+| | Primary Container | Secondary Container(s) |
+|---|---|---|
+| **nanit** | Yes — connects to cloud, receives RTMP for all cameras | No — does not run nanit |
+| **go2rtc source** | `rtmp://127.0.0.1:1935/local/<baby_uid>` | `rtmp://<primary_ip>:1935/local/<baby_uid>` |
+| **go2rtc** | Yes | Yes |
+| **onvif-server** | Yes | Yes |
+| **session.json** | Required | Not needed |
+
+Only the primary container runs `indiefan/nanit`. Secondary containers point their go2rtc at the primary's RTMP server over the network. This avoids Nanit cloud connection limits.
+
 ### ONVIF SerialNumber (Critical)
 
 Each ONVIF server instance **must** have a unique `SerialNumber` in its config. UniFi Protect uses this to identify cameras. If two instances share the same serial number, Protect will treat them as duplicates of the same camera.
@@ -266,7 +297,7 @@ server:
   HardwareID: UNIQUE_VALUE_HERE
 ```
 
-Without these, both default to `0.0.0` and `1.0.0` respectively, causing Protect to see all instances as the same camera.
+Without these, both default to `0.0.0` and `1.0.0` respectively, causing Protect to see all instances as the same camera. Using each camera's Nanit camera UID as the serial number is recommended.
 
 ### Network Architecture
 
@@ -274,33 +305,43 @@ Each camera container uses two static IPs:
 
 | IP | Purpose |
 |---|---|
-| Primary (static) | Container's main IP — runs nanit, go2rtc, ONVIF server |
+| Primary (static) | Container's main IP — runs go2rtc, ONVIF server (and nanit on primary) |
 | Secondary (static) | Virtual IP for ONVIF — iptables NATs port 80 to 8081 |
 
 Both IPs **must be static**. The primary IP is referenced in `docker-compose.yml` (`NANIT_RTMP_ADDR`), `onvif.yaml` (`rtsp_url`, `snapshot_url`), and UFW rules. If it changes, streams will break. The secondary IP is what you give to UniFi Protect when adding the camera.
 
 ### Why host networking?
 
-All containers use `network_mode: host` because:
+All Docker services use `network_mode: host` because:
 
 1. The nanit container receives inbound RTMP connections from physical cameras on port 1935
-2. go2rtc needs to reach nanit's RTMP on localhost
+2. go2rtc needs to reach nanit's RTMP on localhost (or over the network for secondary containers)
 3. The ONVIF server needs to be reachable on the secondary IP
 4. Bridge networking creates isolation that breaks inter-container communication without additional configuration
-
-### Nanit Multi-Camera Behavior
-
-The `indiefan/nanit` image connects to **all cameras on your Nanit account**, not just one. This means each container receives RTMP streams for every camera. This is normal — go2rtc only subscribes to the specific camera's stream via the baby UID in the RTMP path.
 
 ## Ports Reference
 
 | Port | Service | Protocol | Purpose |
 |---|---|---|---|
-| 1935 | nanit | RTMP | Receives video from physical Nanit cameras |
+| 1935 | nanit | RTMP | Receives video from physical Nanit cameras (primary only) |
 | 8554 | go2rtc | RTSP | RTSP output consumed by ONVIF server and UNVR |
 | 1984 | go2rtc | HTTP | go2rtc API and web UI (stream status, snapshots) |
 | 8081 | onvif-server | HTTP | ONVIF device service endpoint |
 | 80 | iptables NAT | HTTP | Redirects to 8081 on the secondary IP |
+
+## Home Assistant Integration
+
+The RTSP streams from go2rtc can be added directly to Home Assistant using the **Generic Camera** integration:
+
+1. Go to **Settings > Devices & Services > Add Integration**
+2. Search for **Generic Camera**
+3. Enter:
+   - **Still Image URL:** `http://<container-ip>:1984/api/frame.jpeg?src=<stream-name>`
+   - **Stream Source:** `rtsp://<container-ip>:8554/<stream-name>`
+   - **RTSP Transport Protocol:** `TCP`
+4. Leave username/password blank
+
+Remember to add your Home Assistant's IP to UFW on each container (ports 8554 and 1984).
 
 ## Troubleshooting
 
@@ -324,15 +365,39 @@ The `indiefan/nanit` image connects to **all cameras on your Nanit account**, no
    ufw status numbered
    ```
 
+### "Too many app connections" errors
+
+This means too many clients are trying to connect to the Nanit cloud simultaneously. The fix is to run **only one nanit container** across all your LXC containers. Additional containers should pull RTMP from the primary over the network instead of running their own nanit instance. See [Primary vs. Secondary Containers](#primary-vs-secondary-containers).
+
+Also ensure you don't have the Nanit mobile app actively streaming on multiple devices while the containers are running.
+
 ### "Unable to stream" on ViewPort
 
 1. Reboot the ViewPort — this fixes the issue most of the time
 2. Add the ViewPort's IP to UFW on each camera container (ports 8554, 1984)
 3. Check your Ubiquiti network firewall rules allow the ViewPort to reach the camera container IPs
 
+### Stream breaks after camera IP changes
+
+Nanit cameras use DHCP. If a camera's IP changes, it may be blocked by UFW. Use your LAN subnet (e.g., `192.168.1.0/24`) for the RTMP firewall rule instead of individual camera IPs:
+
+```bash
+ufw allow from <LAN_SUBNET> to any port 1935 proto tcp
+```
+
+You can find a camera's current IP with:
+
+```bash
+tcpdump -i eth0 port 1935 -n -c 5
+```
+
+### Both cameras show the same name in Protect
+
+Each ONVIF server must have a unique `SerialNumber` in config. See [ONVIF SerialNumber](#onvif-serialnumber-critical) above.
+
 ### Stream drops or reconnects
 
-Check nanit container logs:
+Check nanit container logs (primary container only):
 ```bash
 docker logs -f nanit
 ```
@@ -345,20 +410,6 @@ curl -s http://127.0.0.1:1984/api/streams | python3 -m json.tool
 ```
 
 Look for active `producers` (RTMP from nanit) and `consumers` (RTSP to UNVR).
-
-### Finding camera IPs (for UFW rules)
-
-If camera IPs change (DHCP), use tcpdump to find the current source:
-
-```bash
-tcpdump -i eth0 port 1935 -n -c 5
-```
-
-The source IP in the SYN packet is your camera's current IP. Update UFW accordingly.
-
-### Both cameras show the same name in Protect
-
-Each ONVIF server must have a unique `SerialNumber` in config. See [ONVIF SerialNumber](#onvif-serialnumber-critical) above.
 
 ## Components
 

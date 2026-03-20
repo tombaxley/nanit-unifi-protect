@@ -1,0 +1,22 @@
+# Docker Compose for SECONDARY containers (no nanit service).
+# Secondary containers pull RTMP from the primary container over the network.
+# Only the primary container runs indiefan/nanit.
+services:
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: go2rtc
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+    command: ["go2rtc", "-c", "/config/go2rtc.yaml"]
+
+  onvif:
+    image: danimal4326/onvif-server:latest
+    container_name: onvif-${CAMERA_NAME}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./onvif.yaml:/onvif-server/config.yaml:ro
+    depends_on:
+      - go2rtc

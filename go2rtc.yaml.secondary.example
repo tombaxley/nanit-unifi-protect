@@ -1,0 +1,12 @@
+# go2rtc config for SECONDARY containers.
+# Pulls RTMP from the PRIMARY container over the network instead of localhost.
+streams:
+  # Stream name used in RTSP URL: rtsp://<container-ip>:8554/<stream-name>
+  camera-name:
+    - rtmp://<primary-container-ip>:1935/local/<baby-uid>
+
+rtsp:
+  listen: ":8554"
+
+api:
+  listen: ":1984"
